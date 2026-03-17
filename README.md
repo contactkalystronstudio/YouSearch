@@ -5,8 +5,8 @@ Blazing-fast local search engine (Rust + C++) with content search, fuzzy matchin
 
 **Fast, fuzzy, content-aware file search. Single binary. Terminal + Web UI.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/YOUR_USERNAME/yousearch/ci.yml?label=build&style=flat-square)](https://github.com/YOUR_USERNAME/yousearch/actions)
-[![Release](https://img.shields.io/github/v/release/YOUR_USERNAME/yousearch?style=flat-square&color=7f6cf7)](https://github.com/YOUR_USERNAME/yousearch/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/contactkalystronstudio/yousearch/ci.yml?label=build&style=flat-square)](https://github.com/YOUR_USERNAME/yousearch/actions)
+[![Release](https://img.shields.io/github/v/release/contactkalystronstudio/yousearch?style=flat-square&color=7f6cf7)](https://github.com/contactkalystronstudio/yousearch/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4df0a0?style=flat-square)](LICENSE)
 [![Rust 2024](https://img.shields.io/badge/rust-2024%20edition-f4c842?style=flat-square)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue?style=flat-square)](#install)
