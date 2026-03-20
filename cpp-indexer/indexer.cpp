@@ -66,13 +66,15 @@ static std::string read_text(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     if (!f) return {};
 
-    std::string buf(static_cast<size_t>(sz), '\0');
+    std::string buf;
+    buf.resize(static_cast<size_t>(sz));
     f.read(buf.data(), static_cast<std::streamsize>(sz));
     buf.resize(static_cast<size_t>(f.gcount()));
 
     const size_t probe = buf.size() < 512 ? buf.size() : 512;
-    for (size_t i = 0; i < probe; ++i)
+    for (size_t i = 0; i < probe; ++i) {
         if (buf[i] == '\0') return {};
+    }
 
     return buf;
 }
@@ -98,6 +100,8 @@ static void collect(const fs::path& root, std::vector<Entry>& out) {
     if (ec) return;
 
     for (auto& ent : it) {
+        if (ent.is_symlink()) continue; 
+        
         if (ent.is_directory()) {
             if (should_skip_dir(ent.path()))
                 it.disable_recursion_pending();
