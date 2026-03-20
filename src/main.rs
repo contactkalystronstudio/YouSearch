@@ -86,8 +86,9 @@ pub fn load_config() -> Config {
 }
 
 pub fn save_config(cfg: &Config) {
+    let path = config_path();
     if let Ok(text) = toml::to_string_pretty(cfg) {
-        let _ = fs::write(config_path(), text);
+        let _ = fs::write(&path, text);
     }
 }
 
@@ -214,7 +215,8 @@ fn is_binary(path: &Path) -> bool {
 }
 
 fn read_content(path: &Path, max_kb: usize) -> Option<String> {
-    let meta = fs::metadata(path).ok()?;
+    let meta = fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() { return None; }
     if meta.len() > max_kb as u64 * 1024 { return None; }
     if is_binary(path) { return None; }
     let mut s = String::new();
@@ -235,8 +237,14 @@ fn walk(dir: &Path, cfg: &Config, out: &mut Vec<IndexEntry>) {
     for entry in rd.flatten() {
         let p = entry.path();
         if is_excluded(&p, cfg) { continue; }
+        
+        if let Ok(meta) = fs::symlink_metadata(&p) {
+            if meta.file_type().is_symlink() { continue; }
+        }
+        
         if p.is_dir()  { walk(&p, cfg, out); }
         if !p.is_file() { continue; }
+        
         let ext = p.extension().and_then(|e| e.to_str())
             .map(|e| format!(".{e}")).unwrap_or_default();
         let content = if is_text_ext(&ext, cfg) { read_content(&p, cfg.max_content_kb) } else { None };
@@ -254,6 +262,11 @@ fn walk_light(dir: &Path, cfg: &Config, out: &mut HashMap<String, u64>) {
     for entry in rd.flatten() {
         let p = entry.path();
         if is_excluded(&p, cfg) { continue; }
+        
+        if let Ok(meta) = fs::symlink_metadata(&p) {
+            if meta.file_type().is_symlink() { continue; }
+        }
+
         if p.is_dir()  { walk_light(&p, cfg, out); }
         if p.is_file() { out.insert(p.to_string_lossy().into_owned(), mtime(&p)); }
     }
@@ -372,6 +385,7 @@ fn synonyms(term: &str) -> Vec<String> {
         if *k == term { out.extend(vals.iter().map(|v| v.to_string())); }
         for v in *vals { if *v == term { out.push(k.to_string()); } }
     }
+    out.sort();
     out.dedup();
     out
 }
@@ -460,12 +474,15 @@ pub fn search(entries: &[IndexEntry], raw: &str, cfg: &Config) -> Vec<MatchResul
             exclude.push(r.to_lowercase());
         } else if let Some(r) = part.strip_prefix("--limit=") {
             limit = r.parse().unwrap_or(limit);
+        } else if part == "--json" {
+            // Handled separately prior to this
         } else if let Some(r) = part.strip_prefix('#') {
             tag_filter = Some(r.to_lowercase());
         } else {
             include.extend(synonyms(&part.to_lowercase()));
         }
     }
+    include.sort();
     include.dedup();
 
     let mut results: Vec<MatchResult> = entries.iter()
@@ -607,12 +624,18 @@ pub fn cmd_search(query: &str, cfg: &Config) {
         return;
     }
 
+    let is_json = query.contains("--json");
+
     if !index_path().exists() {
-        println!("{}", "  ⚙  No index found. Building now…".yellow());
+        if !is_json {
+            println!("{}", "  ⚙  No index found. Building now…".yellow());
+        }
         let e = build_full(cfg);
         save_index(&e);
-        println!("{}", format!("  ✓  {} files indexed.", e.len()).green());
-        println!();
+        if !is_json {
+            println!("{}", format!("  ✓  {} files indexed.", e.len()).green());
+            println!();
+        }
     }
 
     let entries = load_index(cfg);
@@ -622,7 +645,12 @@ pub fn cmd_search(query: &str, cfg: &Config) {
         .collect();
 
     let results = search(&entries, query, cfg);
-    print_results(&results, &terms);
+
+    if is_json {
+        println!("{}", to_json(&results, query));
+    } else {
+        print_results(&results, &terms);
+    }
 
     let mut c = cfg.clone();
     c.history.push(query.to_string());
@@ -951,24 +979,34 @@ fn cmd_setup() {
         println!("{}", format!("  ℹ  Config already at {}", path.display()).yellow());
     }
 
-    print!("\n  Add to PATH? (y/n): ");
-    let _ = std::io::stdout().flush();
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    if cfg!(target_os = "windows") {
+        print!("\n  Add to PATH? (y/n): ");
+        let _ = std::io::stdout().flush();
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
 
-    if input.trim().eq_ignore_ascii_case("y") {
+        if input.trim().eq_ignore_ascii_case("y") {
+            if let Ok(exe) = env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    let ds  = dir.to_string_lossy();
+                    let cur = env::var("PATH").unwrap_or_default();
+                    if !cur.contains(ds.as_ref()) {
+                        let _ = std::process::Command::new("setx")
+                            .args(["PATH", &format!("{ds};{cur}")])
+                            .status();
+                        println!("{}", "  ✓  Added to PATH. Restart terminal.".green());
+                    } else {
+                        println!("{}", "  ℹ  Already in PATH.".yellow());
+                    }
+                }
+            }
+        }
+    } else {
+        println!("\n  {} {}", "ℹ".cyan(), "To add YouSearch to your PATH, run:".white());
         if let Ok(exe) = env::current_exe() {
             if let Some(dir) = exe.parent() {
-                let ds  = dir.to_string_lossy();
-                let cur = env::var("PATH").unwrap_or_default();
-                if !cur.contains(ds.as_ref()) {
-                    let _ = std::process::Command::new("setx")
-                        .args(["PATH", &format!("{ds};{cur}")])
-                        .status();
-                    println!("{}", "  ✓  Added to PATH. Restart terminal.".green());
-                } else {
-                    println!("{}", "  ℹ  Already in PATH.".yellow());
-                }
+                println!("    echo 'export PATH=\"$PATH:{}\"' >> ~/.bashrc", dir.display());
+                println!("    (or ~/.zshrc, depending on your shell)");
             }
         }
     }
@@ -984,7 +1022,7 @@ fn home_dir() -> Option<PathBuf> {
 
 fn banner() {
     println!("{}", "  ╔══════════════════════════════════════╗".cyan());
-    println!("{}", "  ║  ⚡  YouSearch v2.0                  ║".cyan().bold());
+    println!("{}", "  ║  ⚡  YouSearch v2.1.0                ║".cyan().bold());
     println!("{}", "  ╚══════════════════════════════════════╝".cyan());
     println!();
 }
@@ -997,6 +1035,7 @@ fn print_help() {
         ("index --watch",    "Live indexing — auto-update on changes"),
         ("index -i",         "Incremental update (fast, changed files only)"),
         ("search <query>",   "Search files by name & content"),
+        ("search <q> --json","Return JSON output"),
         ("add <path>",       "Add a directory to the index"),
         ("tag <file> <tag>", "Tag a file with a label"),
         ("untag <f> <t>",    "Remove a tag"),
