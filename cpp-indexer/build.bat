@@ -14,7 +14,6 @@ if %errorlevel% neq 0 (
 
 for /f "tokens=*" %%v in ('g++ --version 2^>^&1 ^| findstr /r "[0-9][0-9]*\.[0-9]"') do set GVER=%%v
 echo [INFO] Compiler: !GVER!
-
 echo [INFO] Compiling %SRC%...
 g++ %FLAGS% -c -o %OBJ% %SRC%
 if %errorlevel% neq 0 (
@@ -25,7 +24,7 @@ if %errorlevel% neq 0 (
 echo [INFO] Linking %OUT%...
 g++ -shared -o %OUT% %OBJ% -lstdc++fs
 if %errorlevel% neq 0 (
-    echo [INFO] Retrying without -lstdc++fs (GCC 9+)...
+    echo [INFO] Retrying without -lstdc++fs ^(GCC 9+^)...
     g++ -shared -o %OUT% %OBJ%
     if %errorlevel% neq 0 (
         echo [ERROR] Link failed.
